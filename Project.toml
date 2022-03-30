@@ -1,0 +1,8 @@
+name = "OSMTool"
+
+[deps]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+OpenStreetMapPBF = "32359c53-f983-4442-b913-a1664815e12e"
+RuntimeGeneratedFunctions = "7e49a35a-f44a-4d26-94aa-eba1b4ca6b47"
