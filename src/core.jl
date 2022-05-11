@@ -69,6 +69,27 @@ function main(args)
         way_filter = x -> true  # no-op filter
     end
 
+    intersections = if args["split-ways-at-intersections"]
+        @info "Initial pass to find intersections"
+        seen_nodes = Set{Int64}()
+        res = Set{Int64}()
+
+        scan_ways(file) do way
+            for node in way.nodes
+                if node ∈ seen_nodes
+                    push!(res, node)
+                else
+                    push!(seen_nodes, node)
+                end
+            end
+        end
+
+        @info "found $(length(res)) intersections"
+        res
+    else
+        nothing
+    end
+
     if haskey(args, "write-gdal-ways") && !isnothing(args["write-gdal-ways"])
         ArchGDAL.create(args["write-gdal-ways"], driver = ArchGDAL.getdriver(args["gdal-driver"])) do ds
             # EPSG 4326 - WGS 84 - coordinate reference system used by OpenStreetMap
@@ -78,56 +99,72 @@ function main(args)
                     # todo long field names for shapefile
                     ArchGDAL.addfielddefn!(layer, tag, ArchGDAL.OFTString)
                 end
+
+                if args["split-ways-at-intersections"]
+                    ArchGDAL.addfielddefn!(layer, "fr_node", ArchGDAL.OFTInteger64)
+                    ArchGDAL.addfielddefn!(layer, "to_node", ArchGDAL.OFTInteger64)
+                end
                 
                 lats = Vector{Float64}()
                 lons = Vector{Float64}()
                 oid = zero(Int64)
 
-                scan_pbf(file, ways = way -> begin
-                    if way_filter(way)
-                        if length(way.nodes) < 2
-                            return
-                        end
-                        empty!(lats)
-                        empty!(lons)
-                        nodes = Vector{Int64}()
-                        push!(nodes, way.nodes[1])
+                scan_ways(file) do full_way
+                    if way_filter(full_way)
 
-                        # prepopulate with first node
-                        prev_nodeid = -one(Int64)
-                        for nodeid in way.nodes
-                            # skip duplicated nodes
-                            if nodeid != prev_nodeid
-                                node = all_node_locations[nodeid]
-                            
-                                push!(lats, node.lat)
-                                push!(lons, node.lon)
-                                prev_nodeid = nodeid
+                        split_ways = if args["split-ways-at-intersections"]
+                            split_way(full_way, intersections)
+                        else
+                            [full_way]
+                        end
+
+                        for way in split_ways
+                            if length(way.nodes) < 2
+                                return
                             end
-                        end
+                            empty!(lats)
+                            empty!(lons)
+                            nodes = Vector{Int64}()
+                            push!(nodes, way.nodes[1])
 
-                        # save the way to the file
-                        ArchGDAL.addfeature(layer) do f
-                            ArchGDAL.setgeom!(f, ArchGDAL.createlinestring(lons, lats))
-                            ArchGDAL.setfield!(f, 0, way.id)
-                            for (i, tag) in enumerate(gdal_tags)
-                                # GDAL uses zero-based indexing while Julia uses 1-based so it's okay that the way id is the first field
-                                if haskey(way.tags, tag)
-                                    ArchGDAL.setfield!(f, i, way.tags[tag])
-                                else
-                                    ArchGDAL.setfieldnull!(f, i)
+                            # prepopulate with first node
+                            prev_nodeid = -one(Int64)
+                            for nodeid in way.nodes
+                                # skip duplicated nodes
+                                if nodeid != prev_nodeid
+                                    node = all_node_locations[nodeid]
+                                
+                                    push!(lats, node.lat)
+                                    push!(lons, node.lon)
+                                    prev_nodeid = nodeid
                                 end
                             end
 
-                            # createfeature uses setfeature! instead of addfeature!, so fid needs to be defined
-                            ArchGDAL.setfid!(f, oid)
-                            oid += 1
+                            # save the way to the file
+                            ArchGDAL.addfeature(layer) do f
+                                ArchGDAL.setgeom!(f, ArchGDAL.createlinestring(lons, lats))
+                                ArchGDAL.setfield!(f, 0, way.id)
+                                for (i, tag) in enumerate(gdal_tags)
+                                    # GDAL uses zero-based indexing while Julia uses 1-based so it's okay that the way id is the first field
+                                    if haskey(way.tags, tag)
+                                        ArchGDAL.setfield!(f, i, way.tags[tag])
+                                    else
+                                        ArchGDAL.setfieldnull!(f, i)
+                                    end
+                                end
+
+                                if args["split-ways-at-intersections"]
+                                    ArchGDAL.setfield!(f, length(gdal_tags) + 1, way.nodes[1])
+                                    ArchGDAL.setfield!(f, length(gdal_tags) + 2, way.nodes[end])
+                                end
+
+                                # createfeature uses setfeature! instead of addfeature!, so fid needs to be defined
+                                ArchGDAL.setfid!(f, oid)
+                                oid += 1
+                            end
                         end
-                        # prepare for next way segment
-                        empty!(lats)
-                        empty!(lons)
                     end
-                end)
+                end
 
                 @info "Wrote $(oid + 1) ways"
             end

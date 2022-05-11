@@ -26,6 +26,9 @@ s = ArgParseSettings()
         help = "Tags to retain in GDAL output, comma-separated"
         arg_type = String
         default = "highway,name"
+    "--split-ways-at-intersections"
+        help = "Break ways at intersection nodes (i.e. create noded network)"
+        action = :store_true
     "input_file"
         help = "Input file, OSM PBF format"
 end
