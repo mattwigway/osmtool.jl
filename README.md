@@ -2,6 +2,7 @@
 
 This is Julia tool to manipulate OSM data. Its main functionality is to convert OSM data to [ArchGDAL](https://github.com/yeesian/ArchGDAL.jl) supported formats, optionally splitting ways at intersections to create a routable GIS file.
 
+```
 usage: osmtool [--filter-ways FILTER-WAYS]
                [--filter-nodes FILTER-NODES]
                [--no-relations NO-RELATIONS]
@@ -38,3 +39,4 @@ optional arguments:
                         CSV with highway and speed columns specifying
                         assumed max speeds when not specified
   -h, --help            show this help message and exit
+```
