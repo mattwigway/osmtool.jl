@@ -29,6 +29,9 @@ s = ArgParseSettings()
     "--split-ways-at-intersections"
         help = "Break ways at intersection nodes (i.e. create noded network)"
         action = :store_true
+    "--speed-table"
+        help = "CSV with highway and speed columns specifying assumed max speeds when not specified"
+        arg_type = String
     "input_file"
         help = "Input file, OSM PBF format"
 end

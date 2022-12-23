@@ -100,14 +100,26 @@ function main(args)
                     ArchGDAL.addfielddefn!(layer, tag, ArchGDAL.OFTString)
                 end
 
-                if args["split-ways-at-intersections"]
-                    ArchGDAL.addfielddefn!(layer, "fr_node", ArchGDAL.OFTInteger64)
-                    ArchGDAL.addfielddefn!(layer, "to_node", ArchGDAL.OFTInteger64)
-                end
+                ArchGDAL.addfielddefn!(layer, "fr_node", ArchGDAL.OFTInteger64)
+                ArchGDAL.addfielddefn!(layer, "to_node", ArchGDAL.OFTInteger64)
+                ArchGDAL.addfielddefn!(layer, "length_m", ArchGDAL.OFTReal)
+                ArchGDAL.addfielddefn!(layer, "oneway", ArchGDAL.OFTInteger)
                 
+                if !isnothing(args["speed-table"])
+                    ArchGDAL.addfielddefn!(layer, "speed_kmh", ArchGDAL.OFTReal)
+                    ArchGDAL.addfielddefn!(layer, "time_secs", ArchGDAL.OFTReal)
+                end
+
                 lats = Vector{Float64}()
                 lons = Vector{Float64}()
+                length_m = 0.0
                 oid = zero(Int64)
+
+                speeds = if !isnothing(args["speed-table"])
+                    read_speeds(args["speed-table"])
+                else
+                    nothing
+                end
 
                 scan_ways(file) do full_way
                     if way_filter(full_way)
@@ -132,12 +144,21 @@ function main(args)
                             for nodeid in way.nodes
                                 # skip duplicated nodes
                                 if nodeid != prev_nodeid
+                                    if !haskey(all_node_locations, nodeid)
+                                        @warn "Node $nodeid in way $(way.id) not found, skipping this way"
+                                        continue
+                                    end
                                     node = all_node_locations[nodeid]
                                 
                                     push!(lats, node.lat)
                                     push!(lons, node.lon)
                                     prev_nodeid = nodeid
                                 end
+                            end
+
+                            length_m = 0.0
+                            for i in 2:length(lats)
+                                length_m += euclidean_distance(Geodesy.LatLon(lats[i - 1], lons[i - 1]), Geodesy.LatLon(lats[i], lons[i]))
                             end
 
                             # save the way to the file
@@ -153,9 +174,16 @@ function main(args)
                                     end
                                 end
 
-                                if args["split-ways-at-intersections"]
-                                    ArchGDAL.setfield!(f, length(gdal_tags) + 1, way.nodes[1])
-                                    ArchGDAL.setfield!(f, length(gdal_tags) + 2, way.nodes[end])
+                                ArchGDAL.setfield!(f, length(gdal_tags) + 1, way.nodes[1])
+                                ArchGDAL.setfield!(f, length(gdal_tags) + 2, way.nodes[end])
+                                ArchGDAL.setfield!(f, length(gdal_tags) + 3, length_m)
+                                ArchGDAL.setfield!(f, length(gdal_tags) + 4, oneway_for_way(way))
+
+                                if !isnothing(speeds)
+                                    speed = maxspeed_for_way(way, speeds)
+                                    ArchGDAL.setfield!(f, length(gdal_tags) + 5, speed)
+                                    traversal_time_secs = length_m / (speed * 1000 / 3600)
+                                    ArchGDAL.setfield!(f, length(gdal_tags) + 6, traversal_time_secs)
                                 end
 
                                 # createfeature uses setfeature! instead of addfeature!, so fid needs to be defined
